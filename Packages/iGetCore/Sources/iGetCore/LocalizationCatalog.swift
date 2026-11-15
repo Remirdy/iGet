@@ -46,6 +46,8 @@ enum LocalizationCatalog {
         "Add to desktop": (tr: "Masaüstüne ekle", de: "Zum Desktop hinzufügen"),
         "Current space: %@": (tr: "Geçerli alan: %@", de: "Aktueller Bereich: %@"),
         "Configure %@": (tr: "%@ ayarları", de: "%@ konfigurieren"),
+        "Configure widget": (tr: "Widget’ı yapılandır", de: "Widget konfigurieren"),
+        "Add via macOS → Edit Widgets.": (tr: "macOS → Widget’ları Düzenle ile ekleyin.", de: "Über macOS → Widgets bearbeiten hinzufügen."),
         "%d widget": (tr: "%d widget", de: "%d Widget"),
         "%d widgets": (tr: "%d widget", de: "%d Widgets"),
         "Clock": (tr: "Saat", de: "Uhr"),

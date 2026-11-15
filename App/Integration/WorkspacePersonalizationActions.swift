@@ -7,9 +7,11 @@ extension WorkspaceStore {
         editTile(id) { tile in var options = tile.settings; edit(&options); tile.settings = options }
     }
     func editInStudio(_ id: UUID) { editingTileID = id; page = .studio; MainWindowRegistry.show() }
-    func createAndCustomize(_ kind: ToolKind) {
+    func createAndCustomize(_ kind: ToolKind, size: TileSize? = nil, palette: String? = nil) {
         let previous = Set(document.activeTiles.map(\.id))
-        addTile(kind, size: kind == .canvas || kind == .game ? .large : .small, palette: kind.defaultPalette)
+        let targetSize = size ?? (kind == .canvas || kind == .game ? .large : .small)
+        let targetPalette = palette ?? kind.defaultPalette
+        addTile(kind, size: targetSize, palette: targetPalette)
         guard let tile = document.activeTiles.last, !previous.contains(tile.id) else { return }
         selectedTool = nil
         editInStudio(tile.id)

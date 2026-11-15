@@ -73,18 +73,30 @@ struct GalleryView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         HStack { Text(L10n.text("WIDGET SETTINGS")).font(.system(size: 9, weight: .semibold)).tracking(1.4).foregroundStyle(BrandTheme.accent); Spacer(); Image(systemName: selected.symbol).foregroundStyle(.secondary) }
                         VStack(alignment: .leading, spacing: 7) { Text(selected.title).font(.system(size: 23, weight: .semibold)); Text(selected.summary).font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
-                        LiveTile(tile: DesktopTile(kind: selected, palette: palette), interactive: false).frame(height: 196).allowsHitTesting(false)
+                        let previewTile = DesktopTile(kind: selected, size: size, palette: palette)
+                        GeometryReader { proxy in
+                            let targetW = max(1, previewTile.displayWidth)
+                            let targetH = max(1, previewTile.displayHeight)
+                            let scale = min(1.0, min(proxy.size.width / targetW, proxy.size.height / targetH))
+                            LiveTile(tile: previewTile, interactive: false)
+                                .frame(width: targetW, height: targetH)
+                                .scaleEffect(scale)
+                                .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+                        }
+                        .frame(height: 196)
+                        .allowsHitTesting(false)
                         VStack(alignment: .leading, spacing: 10) { Text(L10n.text("Starting size")).font(.system(size: 11, weight: .medium)); Picker(L10n.text("Size"), selection: $size) { ForEach(TileSize.allCases) { Text(L10n.text($0.rawValue.capitalized)).tag($0) } }.labelsHidden().pickerStyle(.segmented) }
                         VStack(alignment: .leading, spacing: 10) { Text(L10n.text("Palette")).font(.system(size: 11, weight: .medium)); PalettePicker(selection: $palette) }
                         Label(L10n.text("Resize freely in Studio"), systemImage: "arrow.up.left.and.arrow.down.right").font(.system(size: 10)).foregroundStyle(.secondary)
                     }.padding(22)
                 }
                 VStack(spacing: 11) {
-                    Button { store.createAndCustomize(selected) } label: { Label(L10n.text("Customize in Studio"), systemImage: "slider.horizontal.3").frame(maxWidth: .infinity) }.controlSize(.large)
-                    Button { store.addTile(selected, size: size, palette: palette) } label: { Label(L10n.text("Add to desktop"), systemImage: "plus").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).controlSize(.large)
+                    Button { store.createAndCustomize(selected, size: size, palette: palette) } label: { Label(L10n.text("Configure widget"), systemImage: "slider.horizontal.3").frame(maxWidth: .infinity) }.buttonStyle(.borderedProminent).controlSize(.large)
+                    Button { store.addTile(selected, size: size, palette: palette) } label: { Label(L10n.text("Add to desktop"), systemImage: "plus").frame(maxWidth: .infinity) }.controlSize(.large)
+                    Text(L10n.text("Add via macOS → Edit Widgets.")).font(.system(size: 10)).foregroundStyle(.tertiary)
                     Text(L10n.format("Current space: %@", store.document.activeSpace?.name ?? "—")).font(.system(size: 10)).foregroundStyle(.secondary)
                 }.padding(22)
-            }.frame(width: 270).background(BrandTheme.surface(scheme == .dark).opacity(0.55))
+            }.frame(width: 300).background(BrandTheme.surface(scheme == .dark).opacity(0.55))
         }
     }
 }
