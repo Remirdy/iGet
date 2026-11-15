@@ -24,9 +24,9 @@
 
 iGet is an open-source macOS application built with SwiftUI and AppKit. It runs without third-party runtime dependencies or embedded web views, and stores notes, tasks, images, and layout data locally in SQLite.
 
-Desktop widgets sit in borderless windows with configurable placement (desktop level, normal, or floating), position locking, optional 8 pt grid snapping, and click-through mode. **Widget Studio** lets you adjust dimensions, surface material, opacity, corner radius, borders, typography, and color palettes or custom hex colors. **Custom canvas** widgets combine movable text, symbol, time, date, and progress layers bound directly to your local tasks, focus sessions, habits, or water counter.
+Desktop widgets sit in borderless windows with configurable placement (desktop level, normal, or floating), position locking, optional 8 pt grid snapping, and click-through mode. **Widget Studio** lets you adjust dimensions, surface material, opacity, corner radius, borders, typography, and matte color palettes (Sage, Paper, Lilac, Slate, Aurora, Peach, Sky, Rose) or custom hex colors. **Custom canvas** widgets combine movable text, symbol, time, date, and progress layers bound directly to your local tasks, focus sessions, habits, or water counter.
 
-**Spaces** store separate widget arrangements that you can switch from the app or menu bar, export as schema-validated `.iget.json` packs, or back up and restore from JSON. Live data sources are demand-driven: CPU, memory, and battery sampling stop when no matching widget or editor is open and pause on sleep. Weather uses Open-Meteo with a 15-minute cache, Apple Music and Spotify playback controls require explicit opt-in via macOS Automation permissions, and the interface runs in English, Turkish, and German.
+**Spaces** organize your desktop with curated workspace profiles (**Study**, **Developer**, and **Daily**) or custom widget arrangements that you can switch with one click from the app or menu bar, export as schema-validated `.iget.json` packs, or back up and restore from JSON. Live data sources are demand-driven: CPU, memory, and battery sampling stop when no matching widget or editor is open and pause on sleep. Weather uses Open-Meteo with a 15-minute cache, Apple Music and Spotify playback controls require explicit opt-in via macOS Automation permissions, and the interface runs in English, Turkish, and German.
 
 ## Widgets
 
@@ -75,12 +75,12 @@ Requires macOS 14 or later and Apple Command Line Tools (`xcode-select --install
 make local      # Build standalone ad hoc signed app for this Mac
 open build/iGet.app
 make packages   # Build and verify Apple Silicon and Intel release archives
-make test       # Run core, integration, and service checks
+make test       # Run 151 core, integration, and service checks
 ```
 
 Building and installing the companion `iGetWidgets` WidgetKit extension requires full Xcode, a signing team, and the `group.com.twobitdev.iGet` App Group capability configured for both targets.
 
-See [development documentation](docs/DEVELOPMENT.md), [connected services](docs/INTEGRATIONS.md), and the [validation record](docs/VALIDATION.md) for architecture and test details.
+See [development documentation](docs/DEVELOPMENT.md), [connected services](docs/INTEGRATIONS.md), and the [validation record](docs/VALIDATION.md) for architecture, multi-language smoke rendering (555 views in EN, TR, DE), and test details.
 
 ## License
 
