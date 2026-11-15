@@ -124,7 +124,7 @@ struct MainShellView: View {
         case .desktop: DesktopPage()
         case .tools: DailyToolsPage()
         case .studio: StudioPage()
-        case .spaces: SpacesPage()
+        case .spaces: SpacesView()
         case .settings: SettingsView()
         }
     }
