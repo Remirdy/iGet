@@ -1,292 +1,180 @@
-// OverlayWindowManager.swift
-// iGet — OverlayEngine
-//
-// Masaüstü overlay pencere sistemi.
-// Her widget için şeffaf, çerçevesiz, sürüklenebilir bir NSWindow açar;
-// pencere seviyesi `.desktopIconWindow + 1` olarak ayarlanır —
-// masaüstü ikonlarının hemen üzerinde, dock ve normal uygulama pencerelerinin altında.
-//
-// Target Membership: iGet
-//
-// Organization: TwoBit-Dev
-
 import AppKit
 import SwiftUI
 import Combine
 
-// MARK: - OverlayWidgetWindow
-
-/// Tek bir overlay widget'ı barındıran özelleştirilmiş NSWindow.
-public final class OverlayWidgetWindow: NSWindow {
-
-    // MARK: Properties
-
-    public let widgetConfig: WidgetConfig
-    private(set) public var dragHandler: DragHandler?
-
-    // MARK: Init
-
-    public init(config: WidgetConfig) {
-        self.widgetConfig = config
-
-        // Kaydedilmiş konum (yoksa config.position kullan)
-        let saved    = SharedStorage.shared.position(for: config.id)
-        let origin   = saved?.cgPoint ?? config.position.cgPoint
-        let size     = config.size.size
-        let frame    = CGRect(origin: origin, size: size)
-
-        super.init(
-            contentRect: frame,
-            styleMask:   [.borderless, .fullSizeContentView],
-            backing:     .buffered,
-            defer:       false
-        )
-
-        configure()
-
-        // Sürükleme yöneticisini bağla
-        dragHandler = DragHandler(window: self, widgetID: config.id)
-    }
-
-    // MARK: - NSWindow Configuration
-
-    private func configure() {
-        // ── Şeffaflık & Görünüm ─────────────────────────────────────────
-        isOpaque          = false
-        backgroundColor   = .clear
-        hasShadow         = widgetConfig.theme.showShadow
-
-        // ── Pencere Seviyesi ─────────────────────────────────────────────
-        // desktopIconWindow: masaüstü ikonlarının seviyesi (Finder desktop icons)
-        // + 1: ikonların hemen üzerinde, dock'un (kgDockWindowLevel) altında
-        level = NSWindow.Level(
-            rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1
-        )
-
-        // ── Koleksiyon Davranışı ─────────────────────────────────────────
-        collectionBehavior = [
-            .canJoinAllSpaces,          // Tüm Spaces'lerde görünür
-            .stationary,                // Mission Control'de sabit kalır
-            .ignoresCycle               // Cmd+` döngüsüne katılmaz
-        ]
-
-        // ── Etkileşim ────────────────────────────────────────────────────
-        isMovableByWindowBackground = false   // DragHandler yönetiyor
-        ignoresMouseEvents          = false   // QuickNote için tıklama gerekli
-        acceptsMouseMovedEvents     = true
-
-        // ── Görev Çubuğu & App Switcher ──────────────────────────────────
-        isExcludedFromWindowsMenu = true      // Pencere listesine ekleme
-    }
-
-    // MARK: - NSWindow Overrides
-
-    public override var canBecomeKey: Bool   { true  }
-    public override var canBecomeMain: Bool  { false }
-
-    // MARK: - Convenience
-
-    /// Widget içeriğini verilen SwiftUI view ile günceller.
-    public func setContent<V: View>(_ view: V) {
-        contentView = NSHostingView(rootView: view)
-    }
-
-    /// Sürükleme event'lerini root NSView'e bağlar.
-    public func attachDraggable() {
-        guard let dragHandler else { return }
-        // ContentView'ü DraggableView olarak sarmala
-        if let hosting = contentView {
-            let wrapper = DraggableView(frame: hosting.frame)
-            wrapper.dragHandler = dragHandler
-            wrapper.autoresizingMask = [.width, .height]
-            wrapper.addSubview(hosting)
-            hosting.autoresizingMask = [.width, .height]
-            contentView = wrapper
-        }
-    }
-}
-
-// MARK: - OverlayWindowManager
-
-/// Tüm overlay widget pencerelerini oluşturan, güncelleyen ve yöneten merkezi sınıf.
-/// iGetApp'ın yaşam döngüsüne bağlıdır — `AppDelegate` veya `@main` struct tarafından tutulur.
 @MainActor
-public final class OverlayWindowManager: ObservableObject {
-
-    // MARK: Singleton
-
-    public static let shared = OverlayWindowManager()
-
-    // MARK: Published State
-
-    @Published public private(set) var activeWindows: [UUID: OverlayWidgetWindow] = [:]
-
-    // MARK: Private
-
-    private var cancellables = Set<AnyCancellable>()
-    private var screenChangeObserver: NSObjectProtocol?
-
-    // MARK: Init
-
-    private init() {
-        observeSettings()
-        observeScreenChanges()
-    }
-
-    deinit {
-        if let obs = screenChangeObserver {
-            NotificationCenter.default.removeObserver(obs)
+final class OverlayWindowManager {
+    private var windows: [UUID: NSPanel] = [:]
+    private var configurations: [UUID: DesktopTile] = [:]
+    private weak var store: WorkspaceStore?
+    private var subscription: AnyCancellable?
+    private var screenObserver: AnyCancellable?
+    private let showsWindows: Bool
+    var clickThroughIDs: Set<UUID> { Set(windows.filter { $0.value.ignoresMouseEvents }.map(\.key)) }
+    var floatingIDs: Set<UUID> { Set(windows.filter { $0.value.level == .floating }.map(\.key)) }
+    var shadowIDs: Set<UUID> { Set(windows.filter { $0.value.hasShadow }.map(\.key)) }
+    var windowFrames: [UUID: CGRect] { windows.mapValues(\.frame) }
+    init(store: WorkspaceStore, showsWindows: Bool = true) {
+        self.store = store
+        self.showsWindows = showsWindows
+        subscription = store.$document.receive(on: DispatchQueue.main).sink { [weak self] document in
+            self?.reconcile(document)
+        }
+        screenObserver = NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification).receive(on: DispatchQueue.main).sink { [weak self] _ in
+            self?.clampAll()
         }
     }
-
-    // MARK: - Lifecycle
-
-    /// Ayarlardaki aktif overlay widget'ları için pencereleri başlatır.
-    /// AppDelegate'in `applicationDidFinishLaunching` metodundan çağrılmalı.
-    public func start() {
-        let settings = SharedStorage.shared.appSettings
-        let enabled  = settings.overlayWidgets.filter { $0.isEnabled }
-        enabled.forEach { open(config: $0) }
-        log("OverlayWindowManager başlatıldı — \(enabled.count) widget açıldı.")
+    func stop() {
+        subscription = nil
+        screenObserver = nil
+        for window in windows.values { window.close() }
+        windows.removeAll()
+        configurations.removeAll()
     }
-
-    /// Tüm overlay pencerelerini kapatır ve kaynakları serbest bırakır.
-    public func stop() {
-        activeWindows.values.forEach { $0.close() }
-        activeWindows.removeAll()
-        log("OverlayWindowManager durduruldu.")
-    }
-
-    // MARK: - Window Management
-
-    /// Verilen konfigürasyon için yeni bir overlay penceresi açar.
-    @discardableResult
-    public func open(config: WidgetConfig) -> OverlayWidgetWindow {
-        // Zaten varsa mevcut pencereyi döndür
-        if let existing = activeWindows[config.id] {
-            existing.orderFront(nil)
-            return existing
+    private func reconcile(_ document: WorkspaceDocument) {
+        guard let store else { return }
+        let visible = document.desktopVisible ? document.activeTiles.filter(\.enabled) : []
+        let ids = Set(visible.map(\.id))
+        for id in Array(windows.keys) where !ids.contains(id) {
+            windows.removeValue(forKey: id)?.close()
+            configurations.removeValue(forKey: id)
         }
-
-        let window = OverlayWidgetWindow(config: config)
-        mountContent(for: config, in: window)
-        window.attachDraggable()
-        window.orderFront(nil)
-
-        activeWindows[config.id] = window
-        log("Pencere açıldı: \(config.kind.displayName) [\(config.id)]")
-        return window
-    }
-
-    /// Verilen ID'ye sahip overlay penceresini kapatır.
-    public func close(widgetID: UUID) {
-        guard let window = activeWindows[widgetID] else { return }
-        window.close()
-        activeWindows.removeValue(forKey: widgetID)
-        log("Pencere kapatıldı: [\(widgetID)]")
-    }
-
-    /// Belirtilen widget'ın görünürlüğünü değiştirir.
-    public func toggle(config: WidgetConfig) {
-        if activeWindows[config.id] != nil {
-            close(widgetID: config.id)
-        } else {
-            open(config: config)
-        }
-    }
-
-    /// Tüm pencereleri SharedStorage'dan güncel konumlara taşır.
-    public func refreshPositions() {
-        for (id, window) in activeWindows {
-            if let pos = SharedStorage.shared.position(for: id) {
-                window.setFrameOrigin(pos.cgPoint)
+        for tile in visible {
+            if let window = windows[tile.id] {
+                if configurations[tile.id] != tile {
+                    let frame = clamp(CGRect(x: tile.x, y: tile.y, width: tile.displayWidth, height: tile.displayHeight + 24))
+                    window.setFrame(frame, display: true)
+                    if let old = configurations[tile.id], old.displayWidth != tile.displayWidth || old.displayHeight != tile.displayHeight { window.contentView = makeContent(tile, store: store) }
+                    configure(window, tile: tile)
+                    configurations[tile.id] = tile
+                }
+            } else {
+                let window = DesktopPanel(contentRect: clamp(CGRect(x: tile.x, y: tile.y, width: tile.displayWidth, height: tile.displayHeight + 24)), styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+                window.isOpaque = false
+                window.backgroundColor = .clear
+                window.hasShadow = tile.settings.shadow
+                window.isReleasedWhenClosed = false
+                window.hidesOnDeactivate = false
+                window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+                window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
+                window.isExcludedFromWindowsMenu = true
+                window.contentView = makeContent(tile, store: store)
+                configure(window, tile: tile)
+                windows[tile.id] = window
+                configurations[tile.id] = tile
+                if showsWindows { window.orderFrontRegardless() }
             }
         }
     }
-
-    // MARK: - Content Mounting
-
-    /// Widget türüne göre doğru SwiftUI view'ı pencereye bağlar.
-    private func mountContent(for config: WidgetConfig, in window: OverlayWidgetWindow) {
-        let theme = config.theme
-
-        switch config.kind {
-
-        case .systemMonitor:
-            let view = SystemMonitorWidgetView(config: config)
-                .environment(\.widgetTheme, theme)
-            window.setContent(view)
-
-        case .quickNote:
-            let view = QuickNoteWidgetView(config: config)
-                .environment(\.widgetTheme, theme)
-            window.setContent(view)
-
-        default:
-            // OverlayEngine yalnızca overlay türü widget'ları render eder
-            let placeholder = Text("⚠️ Bu widget WidgetKit motorunda çalışır.")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            window.setContent(placeholder)
+    private func configure(_ window: NSPanel, tile: DesktopTile) {
+        switch tile.settings.placement {
+        case .desktop: window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopIconWindow)) + 1)
+        case .normal: window.level = .normal
+        case .floating: window.level = .floating
         }
+        window.ignoresMouseEvents = tile.settings.clickThrough
+        window.hasShadow = tile.settings.shadow
     }
-
-    // MARK: - Observers
-
-    /// SharedStorage değişikliklerini dinler; pencere listesini günceller.
-    private func observeSettings() {
-        SharedStorage.shared.settingsPublisher
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] settings in
-                self?.reconcileWindows(with: settings.overlayWidgets)
-            }
-            .store(in: &cancellables)
+    private func makeContent(_ tile: DesktopTile, store: WorkspaceStore) -> NSView {
+        let hosting = NSHostingView(rootView: DesktopWidgetView(initialTile: tile).environmentObject(store).frame(width: tile.displayWidth, height: tile.displayHeight + 24))
+        hosting.sizingOptions = []
+        return hosting
     }
-
-    /// Ekran konfigürasyonu değiştiğinde tüm pencereleri sınır içine taşır.
-    private func observeScreenChanges() {
-        screenChangeObserver = NotificationCenter.default.addObserver(
-            forName: NSApplication.didChangeScreenParametersNotification,
-            object:  nil,
-            queue:   .main
-        ) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshPositions()
-            }
-        }
+    private func clamp(_ frame: CGRect) -> CGRect {
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        guard let screen = screens.max(by: { area($0.intersection(frame)) < area($1.intersection(frame)) }) else { return frame }
+        return CGRect(x: min(max(frame.minX, screen.minX), max(screen.minX, screen.maxX - frame.width)),
+                      y: min(max(frame.minY, screen.minY), max(screen.minY, screen.maxY - frame.height)), width: frame.width, height: frame.height)
     }
-
-    /// Ayarlarla aktif pencere listesini karşılaştırıp ekle/kaldır işlemi yapar.
-    private func reconcileWindows(with configs: [WidgetConfig]) {
-        let enabledIDs = Set(configs.filter { $0.isEnabled }.map { $0.id })
-        let activeIDs  = Set(activeWindows.keys)
-
-        // Yeni eklenenler
-        for config in configs where config.isEnabled && !activeIDs.contains(config.id) {
-            open(config: config)
-        }
-        // Devre dışı bırakılanlar
-        for id in activeIDs where !enabledIDs.contains(id) {
-            close(widgetID: id)
-        }
-    }
-
-    // MARK: - Logging
-
-    private func log(_ message: String) {
-        print("🖥️ [OverlayWindowManager] \(message)")
+    private func area(_ frame: CGRect) -> CGFloat { frame.isNull ? 0 : frame.width * frame.height }
+    private func clampAll() {
+        for window in windows.values { window.setFrame(clamp(window.frame), display: true) }
     }
 }
 
-// MARK: - EnvironmentKey: WidgetTheme
-
-private struct WidgetThemeKey: EnvironmentKey {
-    static let defaultValue = WidgetTheme.default
+private final class DesktopPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
 }
 
-public extension EnvironmentValues {
-    var widgetTheme: WidgetTheme {
-        get { self[WidgetThemeKey.self] }
-        set { self[WidgetThemeKey.self] = newValue }
+private struct DesktopWidgetView: View {
+    @ObservedObject private var localization = LocalizationManager.shared
+    let initialTile: DesktopTile
+    @EnvironmentObject private var store: WorkspaceStore
+    private var tile: DesktopTile { store.document.activeTiles.first { $0.id == initialTile.id } ?? initialTile }
+    @State private var hovering = false
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                if !store.document.preferences.lockLayout && !tile.settings.locked {
+                    WidgetDragHandle(snapEdges: tile.settings.snapToGrid) { point in store.editTile(tile.id) {
+                        $0.x = tile.settings.snapToGrid ? (Double(point.x) / 8.0).rounded() * 8.0 : Double(point.x)
+                        $0.y = tile.settings.snapToGrid ? (Double(point.y) / 8.0).rounded() * 8.0 : Double(point.y)
+                    } }
+                        .overlay(Image(systemName: "line.3.horizontal").font(.system(size: 9)).allowsHitTesting(false))
+                        .frame(maxWidth: .infinity)
+                        .help(L10n.text("Drag to move widget"))
+                } else { Spacer() }
+                Button {
+                    store.editInStudio(tile.id)
+                } label: { Image(systemName: "arrow.up.right").font(.system(size: 9)) }.buttonStyle(.plain).help(L10n.format("Open %@", tile.kind.title))
+                Button { store.removeTile(tile.id) } label: { Image(systemName: "xmark").font(.system(size: 9)) }.buttonStyle(.plain).help(L10n.text("Remove widget"))
+            }.padding(.horizontal, 10).frame(height: 24).foregroundStyle(.primary)
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7)).opacity(hovering ? 1 : 0)
+            LiveTile(tile: tile)
+                .contextMenu {
+                    Button(L10n.text("Customize")) { store.editInStudio(tile.id) }
+                    Button(L10n.text("Duplicate")) { store.duplicateTile(tile.id) }
+                    Button(L10n.text("Lock position")) { store.customize(tile.id) { $0.locked.toggle() } }
+                    Divider()
+                    Button(L10n.text("Remove"), role: .destructive) { store.removeTile(tile.id) }
+                }
+        }.onHover { hovering = $0 }.preferredColorScheme(store.appearance).environment(\.locale, localization.locale)
     }
+}
+
+private struct WidgetDragHandle: NSViewRepresentable {
+    var snapEdges = true
+    let moved: (CGPoint) -> Void
+    func makeNSView(context: Context) -> HandleView { let view = HandleView(); view.moved = moved; view.snapEdges = snapEdges; return view }
+    func updateNSView(_ nsView: HandleView, context: Context) { nsView.moved = moved; nsView.snapEdges = snapEdges }
+    final class HandleView: NSView {
+        var moved: ((CGPoint) -> Void)?
+        var snapEdges = true
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func resetCursorRects() { addCursorRect(bounds, cursor: .openHand) }
+        override func mouseDown(with event: NSEvent) {
+            guard let window else { return }
+            window.performDrag(with: event)
+            let frame = window.frame
+            let screen = NSScreen.screens.first { $0.visibleFrame.intersects(frame) } ?? NSScreen.main
+            if let screen {
+                let rect = screen.visibleFrame
+                var origin = CGPoint(x: max(rect.minX, min(frame.minX, rect.maxX - frame.width)), y: max(rect.minY, min(frame.minY, rect.maxY - frame.height)))
+                if snapEdges {
+                    if abs(origin.x - rect.minX) < 14 { origin.x = rect.minX }
+                    if abs(origin.x + frame.width - rect.maxX) < 14 { origin.x = rect.maxX - frame.width }
+                    if abs(origin.y - rect.minY) < 14 { origin.y = rect.minY }
+                    if abs(origin.y + frame.height - rect.maxY) < 14 { origin.y = rect.maxY - frame.height }
+                }
+                window.setFrameOrigin(origin)
+            }
+            moved?(window.frame.origin)
+        }
+    }
+}
+
+@MainActor
+enum MainWindowRegistry {
+    static weak var window: NSWindow?
+    static var reopen: (() -> Void)?
+    static func show() {
+        if let window { window.makeKeyAndOrderFront(nil) } else { reopen?() }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+}
+
+struct MainWindowReader: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { let view = NSView(); DispatchQueue.main.async { MainWindowRegistry.window = view.window }; return view }
+    func updateNSView(_ nsView: NSView, context: Context) {}
 }

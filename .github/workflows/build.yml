@@ -1,0 +1,33 @@
+name: Build and test
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core behavior and concurrent storage
+        run: ./scripts/test.sh
+      - name: Application integration and desktop lifecycle
+        run: ./scripts/test-integration.sh
+      - name: Connected service behavior
+        run: ./scripts/test-services.sh
+      - name: App and WidgetKit extension
+        run: ./scripts/build.sh --release
+      - name: Standalone Apple Silicon and Intel packages
+        run: ./scripts/package-release.sh
+      - name: Render interface previews
+        run: ./scripts/render-previews.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-release-packages
+          path: build/releases
+      - uses: actions/upload-artifact@v4
+        with:
+          name: interface-previews
+          path: build/previews

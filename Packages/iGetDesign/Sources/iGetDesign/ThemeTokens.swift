@@ -1,15 +1,5 @@
-// ThemeTokens.swift
-// Packages/iGetDesign/Sources/iGetDesign/ThemeTokens.swift
-//
-// iGet Mat Tasarım Sistemi — Küratörlü Renk ve Tipografi Token'ları
-// Tasarım dili: Mat renkler, sakin tipografi, küçük köşe yarıçapı, yeterli kontrast.
-// Dekoratif 3D veya parlama/ışıltı yok.
-//
-// Sorumlu: Zeynep (#02 Z · Design tokens)
-
 import SwiftUI
 
-// MARK: - Theme Palette
 
 public struct ThemePalette: Identifiable, Sendable, Equatable {
     public let id: String
@@ -44,27 +34,24 @@ public struct ThemePalette: Identifiable, Sendable, Equatable {
     }
 }
 
-// MARK: - Curated Presets
 
 public enum ThemeTokens {
 
-    /// Sage (Adaçayı): Sakin, dinlendirici yeşilimsi tonlar
     public static let sage = ThemePalette(
         id: "sage",
         displayName: "Sage",
-        backgroundHex: "#E5ECE5",
+        backgroundHex: "#E4F6ED",
         surfaceHex: "#EFF4EF",
         primaryTextHex: "#1C271E",
         secondaryTextHex: "#526755",
-        accentHex: "#436248",
+        accentHex: "#2F7B60",
         cornerRadius: 14
     )
 
-    /// Paper (Kağıt): Sıcak nötr bej ve ahşap tonları
     public static let paper = ThemePalette(
         id: "paper",
         displayName: "Paper",
-        backgroundHex: "#F5EFE6",
+        backgroundHex: "#FFF3DF",
         surfaceHex: "#FAF6F0",
         primaryTextHex: "#2E251E",
         secondaryTextHex: "#6E5E53",
@@ -72,11 +59,10 @@ public enum ThemeTokens {
         cornerRadius: 14
     )
 
-    /// Lilac (Leylak): Yumuşak pastel lila ve mor tonları
     public static let lilac = ThemePalette(
         id: "lilac",
         displayName: "Lilac",
-        backgroundHex: "#EAE3F0",
+        backgroundHex: "#EDE6FF",
         surfaceHex: "#F3EEF7",
         primaryTextHex: "#251B2D",
         secondaryTextHex: "#5E506B",
@@ -84,11 +70,10 @@ public enum ThemeTokens {
         cornerRadius: 14
     )
 
-    /// Slate (Arduvaz): Dengeli gri-mavi tonlar
     public static let slate = ThemePalette(
         id: "slate",
         displayName: "Slate",
-        backgroundHex: "#DFE5E9",
+        backgroundHex: "#E8EEF8",
         surfaceHex: "#EBF0F3",
         primaryTextHex: "#1B2329",
         secondaryTextHex: "#4E5C67",
@@ -96,11 +81,21 @@ public enum ThemeTokens {
         cornerRadius: 14
     )
 
-    /// Tüm önayarlar listesi
-    public static let all: [ThemePalette] = [sage, paper, lilac, slate]
+    public static let aurora = ThemePalette(id: "aurora", displayName: "Aurora", backgroundHex: "#ECE6FF", surfaceHex: "#F8F5FF", primaryTextHex: "#302347", secondaryTextHex: "#74618F", accentHex: "#7856D8")
+    public static let peach = ThemePalette(id: "peach", displayName: "Peach", backgroundHex: "#FFEBDD", surfaceHex: "#FFF7F0", primaryTextHex: "#57382C", secondaryTextHex: "#926957", accentHex: "#C86C47")
+    public static let sky = ThemePalette(id: "sky", displayName: "Sky", backgroundHex: "#E2F2FF", surfaceHex: "#F1FAFF", primaryTextHex: "#223E57", secondaryTextHex: "#527A99", accentHex: "#388AC3")
+    public static let rose = ThemePalette(id: "rose", displayName: "Rose", backgroundHex: "#FFE6EF", surfaceHex: "#FFF4F8", primaryTextHex: "#542B40", secondaryTextHex: "#95637C", accentHex: "#C65891")
+    public static let all: [ThemePalette] = [aurora, sky, rose, peach, sage, paper, lilac, slate]
 
-    /// ID'ye göre tema bulucu
     public static func palette(for id: String) -> ThemePalette {
         all.first { $0.id.lowercased() == id.lowercased() } ?? sage
+    }
+}
+
+extension Color {
+    init(hex: String) {
+        let cleaned = hex.trimmingCharacters(in: .alphanumerics.inverted)
+        let value = UInt64(cleaned, radix: 16) ?? 0
+        self.init(red: Double((value >> 16) & 255) / 255, green: Double((value >> 8) & 255) / 255, blue: Double(value & 255) / 255)
     }
 }
