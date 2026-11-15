@@ -1,0 +1,19 @@
+# .github/CODEOWNERS
+# iGet — Emirhan × Zeynep Dosya Sahipliği
+
+* @emirhan
+/Packages/iGetCore/ @emirhan
+/Packages/iGetData/ @emirhan
+/Packages/iGetDesign/ @zeynep
+/App/Shell/ @zeynep
+/App/Screens/ @zeynep
+/App/Assets/ @zeynep
+/Features/Clock/ @zeynep
+/Features/Countdown/ @zeynep
+/Widgets/Clock/ @zeynep
+/Widgets/Countdown/ @zeynep
+/Tests/UI/ @zeynep
+/docs/design/ @zeynep
+/iGet.xcodeproj/ @emirhan
+**/Package.swift @emirhan
+/.github/ @emirhan
