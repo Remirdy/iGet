@@ -139,7 +139,14 @@ struct WorkspaceSpace: Codable, Identifiable, Equatable {
     var symbol: String
     var tiles: [DesktopTile]
     static func preset(_ name: String, kinds: [ToolKind]) -> WorkspaceSpace {
-        WorkspaceSpace(name: name, symbol: name == "Study" ? "book" : name == "Developer" ? "terminal" : "sun.max", tiles: kinds.enumerated().map { index, kind in
+        let symbol: String
+        switch name {
+        case "Study": symbol = "book"
+        case "Developer": symbol = "terminal"
+        case "Daily": symbol = "sun.max"
+        default: symbol = "rectangle.3.group"
+        }
+        return WorkspaceSpace(name: name, symbol: symbol, tiles: kinds.enumerated().map { index, kind in
             DesktopTile(kind: kind, palette: kind.defaultPalette, x: 70 + Double(index % 3) * 205, y: 130 + Double(index / 3) * 205)
         })
     }
@@ -227,7 +234,11 @@ struct FocusSession: Codable, Equatable {
 struct WorkspaceDocument: Codable, Equatable {
     var schemaVersion = 1
     var preferences = WorkspacePreferences()
-    var spaces = [WorkspaceSpace.preset("Study", kinds: [.clock, .focus, .tasks]), WorkspaceSpace.preset("Developer", kinds: [.system, .notes, .clock]), WorkspaceSpace.preset("Daily", kinds: [.calendar, .habits, .battery])]
+    var spaces = [
+        WorkspaceSpace.preset("Study", kinds: [.clock, .focus, .tasks, .countdown]),
+        WorkspaceSpace.preset("Developer", kinds: [.system, .notes, .launcher]),
+        WorkspaceSpace.preset("Daily", kinds: [.calendar, .weather, .battery, .habits])
+    ]
     var activeSpaceID: UUID?
     var tasks: [LocalTask] = []
     var habits: [LocalHabit] = []
